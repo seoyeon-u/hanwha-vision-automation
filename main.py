@@ -371,6 +371,7 @@ def run() -> int:
                     results[image_path] = description
                     rows[row_index] = (image_path, description)
                     success += 1
+                    LOGGER.info("API 호출 성공: %s — description 생성 및 체크포인트 저장 완료", image_path)
             except Exception as exc:
                 failed += 1
                 if row_index is None:
