@@ -228,6 +228,26 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(main.run(), 1)
             constructor.assert_not_called()
 
+    def test_fresh_runs_call_api_for_every_annotation(self):
+        self.write_json("a.json")
+        self.write_json("b.json")
+        Image.new("RGB", (3, 3)).save(cfg.IMAGE_DIR / "m1-1-001.png")
+        main.save_excel([("m1-1-001.png", "Old saved description.")])
+        main.append_checkpoint("m1-1-001.png", "Old checkpoint description.")
+        client = MagicMock()
+        descriptions = [f"One tank is visible in scene {number}." for number in range(4)]
+        client.responses.create.side_effect = [response(text) for text in descriptions]
+        with patch.object(cfg, "RESUME", False), patch("main.OpenAI", return_value=client):
+            self.assertEqual(main.run(), 0)
+            self.assertEqual(main.run(), 0)
+        self.assertEqual(client.responses.create.call_count, 4)
+        workbook = load_workbook(cfg.OUTPUT_FILE)
+        try:
+            rows = list(workbook[cfg.SHEET_NAME].values)
+            self.assertEqual([row[1] for row in rows[1:]], descriptions[2:])
+        finally:
+            workbook.close()
+
     def test_locked_excel_keeps_success_checkpoint(self):
         main.append_checkpoint("good.png", "One tank is visible.")
         with patch("main.os.replace", side_effect=PermissionError("locked")):

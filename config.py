@@ -18,7 +18,8 @@ RETRY_BASE_SECONDS = 2.0
 RETRY_MAX_SECONDS = 60.0
 SAVE_EVERY = 10
 SAVE_INTERVAL_SECONDS = 60.0
-RESUME = True
+# Always request fresh descriptions by default. Set True only to resume saved work.
+RESUME = False
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
 
 CLASS_NAMES = {

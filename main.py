@@ -352,7 +352,7 @@ def run() -> int:
                     raise ValueError("imagePath cannot be represented unchanged in an Excel cell")
                 row_index = len(rows)
                 rows.append((image_path, ""))
-                if image_path in results:
+                if cfg.RESUME and image_path in results:
                     rows[row_index] = (image_path, results[image_path])
                     skipped += 1
                     LOGGER.info("Resume: already generated %s", image_path)
