@@ -218,3 +218,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local inputs, generated captions and logs
+data/images/*
+!data/images/.gitkeep
+data/json/*
+!data/json/.gitkeep
+output/*
+!output/.gitkeep
+logs/*
+!logs/.gitkeep

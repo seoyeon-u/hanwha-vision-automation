@@ -1,1 +1,0 @@
-# hanwha-vision-automation
