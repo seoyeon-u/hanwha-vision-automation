@@ -1,10 +1,11 @@
-"""Offline behavioral tests. No real API requests and no user data changes."""
+﻿"""Offline behavioral tests. No real API requests and no user data changes."""
+import asyncio
 import json
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 from openai import RateLimitError, BadRequestError
@@ -98,12 +99,54 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaises(OSError):
             main.image_data_url(bmp)
 
-    @patch("main.time.sleep")
+    def test_external_folder_reads_nested_json_and_relative_image(self):
+        source = self.root / "SSD 데이터" / "1차 납품" / "01-17-27-52"
+        nested = source / "nested"
+        nested.mkdir(parents=True)
+        (nested / "sample.json").write_text(json.dumps(fixture("sample.png")), encoding="utf-8")
+        Image.new("RGB", (3, 3)).save(nested / "sample.png")
+        # A same-named image elsewhere must not override the annotation-relative path.
+        (source / "sample.png").write_bytes(b"invalid image")
+        client = MagicMock()
+        client.responses.create = AsyncMock(return_value=response())
+        client.close = AsyncMock()
+        with patch.multiple(cfg, IMAGE_DIR=source, JSON_DIR=source), patch("main.AsyncOpenAI", return_value=client):
+            self.assertEqual(main.run(), 0)
+        client.responses.create.assert_awaited_once()
+        self.assertEqual(len(list(source.rglob("*"))), 4)
+
+    def test_missing_input_folder_is_not_created(self):
+        missing = self.root / "disconnected_ssd"
+        with patch.object(cfg, "IMAGE_DIR", missing), self.assertRaises(FileNotFoundError):
+            main.run()
+        self.assertFalse(missing.exists())
+
+    def test_excluded_json_and_excel_are_not_processed(self):
+        self.write_json("1ST_TEST.json", fixture("excluded.png"))
+        nested = cfg.JSON_DIR / "nested"
+        nested.mkdir()
+        (nested / "1st_test.json").write_text("invalid JSON", encoding="utf-8")
+        (cfg.JSON_DIR / "move_verify_report.xlsx").write_bytes(b"not an input")
+        (nested / "sample.json").write_text(json.dumps(fixture()), encoding="utf-8")
+        main.append_checkpoint("m1-1-001.png", "One tank is visible.")
+        with patch.object(cfg, "EXCLUDED_JSON_FILES", {"1st_test.json"}), patch("main.AsyncOpenAI") as constructor:
+            self.assertEqual(main.run(), 0)
+            constructor.assert_not_called()
+        workbook = load_workbook(cfg.OUTPUT_FILE)
+        try:
+            self.assertEqual(list(workbook[cfg.SHEET_NAME].values),
+                             [("imagePath", "description"), ("m1-1-001.png", "One tank is visible.")])
+        finally:
+            workbook.close()
+
+    @patch("main.asyncio.sleep")
     def test_empty_response_retry_and_combined_input(self, sleep):
         client = MagicMock()
+        client.responses.create = AsyncMock()
+        client.close = AsyncMock()
         client.responses.create.side_effect = [response(" "), response()]
         _, annotation = main.parse_annotation(self.write_json())
-        description = main.generate_description(client, annotation, "data:image/png;base64,AAAA")
+        description = asyncio.run(main.generate_description(client, annotation, "data:image/png;base64,AAAA"))
         self.assertTrue(description.startswith("One tank"))
         self.assertEqual(client.responses.create.call_count, 2)
         request = client.responses.create.call_args.kwargs
@@ -112,42 +155,48 @@ class PipelineTests(unittest.TestCase):
         self.assertFalse(request["store"])
         sleep.assert_called_once()
 
-    @patch("main.time.sleep")
+    @patch("main.asyncio.sleep")
     def test_rate_limit_retry_and_permanent_error(self, sleep):
         client = MagicMock()
+        client.responses.create = AsyncMock()
+        client.close = AsyncMock()
         request = httpx.Request("POST", "https://api.openai.com/v1/responses")
         limit = RateLimitError("test", response=httpx.Response(429, request=request), body=None)
         client.responses.create.side_effect = [limit, response()]
-        main.generate_description(client, {}, "data:image/png;base64,AAAA")
+        asyncio.run(main.generate_description(client, {}, "data:image/png;base64,AAAA"))
         self.assertEqual(client.responses.create.call_count, 2)
         client.reset_mock()
         client.responses.create.side_effect = BadRequestError("test", response=httpx.Response(400, request=request), body=None)
         with self.assertRaises(BadRequestError):
-            main.generate_description(client, {}, "data:image/png;base64,AAAA")
+            asyncio.run(main.generate_description(client, {}, "data:image/png;base64,AAAA"))
         self.assertEqual(client.responses.create.call_count, 1)
 
-    @patch("main.time.sleep")
+    @patch("main.asyncio.sleep")
     def test_exhausted_empty_response_and_format_validation(self, sleep):
         client = MagicMock()
+        client.responses.create = AsyncMock()
+        client.close = AsyncMock()
         client.responses.create.return_value = response("")
         with self.assertRaises(main.InvalidDescription):
-            main.generate_description(client, {}, "data:image/png;base64,AAAA")
+            asyncio.run(main.generate_description(client, {}, "data:image/png;base64,AAAA"))
         self.assertEqual(client.responses.create.call_count, cfg.MAX_ATTEMPTS)
         for text in ["Description: A tank.", "1. A tank.", "```A tank.```", "전차 한 대."]:
             with self.subTest(text=text), self.assertRaises(main.InvalidDescription):
                 main.validate_description(text)
 
-    @patch("main.time.sleep")
+    @patch("main.asyncio.sleep")
     def test_quota_errors_are_not_retried(self, sleep):
         request = httpx.Request("POST", "https://api.openai.com/v1/responses")
         for code in main.QUOTA_CODES:
             with self.subTest(code=code):
                 client = MagicMock()
+                client.responses.create = AsyncMock()
+                client.close = AsyncMock()
                 error = RateLimitError("test", response=httpx.Response(429, request=request),
                                        body={"code": code, "type": "insufficient_quota"})
                 client.responses.create.side_effect = error
                 with self.assertRaises(RateLimitError):
-                    main.generate_description(client, {}, "data:image/png;base64,AAAA")
+                    asyncio.run(main.generate_description(client, {}, "data:image/png;base64,AAAA"))
                 self.assertEqual(client.responses.create.call_count, 1)
                 self.assertEqual(main.api_error_details(error), (code, "insufficient_quota"))
         sleep.assert_not_called()
@@ -167,11 +216,13 @@ class PipelineTests(unittest.TestCase):
             Image.new("RGB", (3, 3)).save(cfg.IMAGE_DIR / name)
         request = httpx.Request("POST", "https://api.openai.com/v1/responses")
         client = MagicMock()
+        client.responses.create = AsyncMock()
+        client.close = AsyncMock()
         client.responses.create.side_effect = RateLimitError(
             "test", response=httpx.Response(429, request=request),
             body={"error": {"code": "insufficient_quota", "type": "insufficient_quota"}},
         )
-        with patch("main.OpenAI", return_value=client), patch("main.time.sleep") as sleep:
+        with patch("main.AsyncOpenAI", return_value=client), patch("main.asyncio.sleep") as sleep:
             self.assertEqual(main.run(), 1)
             sleep.assert_not_called()
         self.assertEqual(client.responses.create.call_count, 1)
@@ -211,8 +262,10 @@ class PipelineTests(unittest.TestCase):
         self.write_json("e_invalid.json", invalid)
         Image.new("RGB", (3, 3)).save(cfg.IMAGE_DIR / "m1-1-001.png")
         client = MagicMock()
+        client.responses.create = AsyncMock()
+        client.close = AsyncMock()
         client.responses.create.return_value = response()
-        with patch("main.OpenAI", return_value=client):
+        with patch("main.AsyncOpenAI", return_value=client):
             self.assertEqual(main.run(), 1)
         self.assertEqual(client.responses.create.call_count, 1)
         workbook = load_workbook(cfg.OUTPUT_FILE)
@@ -224,7 +277,7 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(rows[4][0], "invalid.png")
         finally:
             workbook.close()
-        with patch("main.OpenAI") as constructor:
+        with patch("main.AsyncOpenAI") as constructor:
             self.assertEqual(main.run(), 1)
             constructor.assert_not_called()
 
@@ -235,9 +288,11 @@ class PipelineTests(unittest.TestCase):
         main.save_excel([("m1-1-001.png", "Old saved description.")])
         main.append_checkpoint("m1-1-001.png", "Old checkpoint description.")
         client = MagicMock()
+        client.responses.create = AsyncMock()
+        client.close = AsyncMock()
         descriptions = [f"One tank is visible in scene {number}." for number in range(4)]
         client.responses.create.side_effect = [response(text) for text in descriptions]
-        with patch.object(cfg, "RESUME", False), patch("main.OpenAI", return_value=client):
+        with patch.object(cfg, "RESUME", False), patch("main.AsyncOpenAI", return_value=client):
             self.assertEqual(main.run(), 0)
             self.assertEqual(main.run(), 0)
         self.assertEqual(client.responses.create.call_count, 4)
@@ -254,6 +309,48 @@ class PipelineTests(unittest.TestCase):
             self.assertFalse(main.save_excel([("good.png", "One tank is visible.")]))
         self.assertEqual(main.load_results()["good.png"], "One tank is visible.")
 
+    def test_concurrency_limit_and_output_order(self):
+        for index in range(12):
+            name = f"image{index:02}.png"
+            self.write_json(f"{index:02}.json", fixture(name))
+            Image.new("RGB", (3, 3)).save(cfg.IMAGE_DIR / name)
+        active = peak = 0
+
+        async def create(**kwargs):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.02)
+            active -= 1
+            return response()
+
+        client = MagicMock()
+        client.responses.create = AsyncMock(side_effect=create)
+        client.close = AsyncMock()
+        with patch("main.AsyncOpenAI", return_value=client):
+            self.assertEqual(main.run(), 0)
+        self.assertEqual(peak, 5)
+        self.assertEqual(client.responses.create.await_count, 12)
+        workbook = load_workbook(cfg.OUTPUT_FILE)
+        try:
+            self.assertEqual([row[0] for row in list(workbook[cfg.SHEET_NAME].values)[1:]],
+                             [f"image{index:02}.png" for index in range(12)])
+        finally:
+            workbook.close()
+
+    def test_progress_estimates_remaining_time(self):
+        with self.assertLogs(main.LOGGER, level="INFO") as logs:
+            main.log_progress(0, 10, 0)
+            main.log_progress(4, 10, 20)
+            main.log_progress(10, 10, 50)
+        self.assertIn("계산 중", logs.output[0])
+        self.assertIn("처리 완료 4/10 (40.0%)", logs.output[1])
+        self.assertIn("남은 6건", logs.output[1])
+        self.assertIn("예상 남은 시간 00:00:30", logs.output[1])
+        self.assertIn("예상 남은 시간 00:00:00", logs.output[2])
+        self.assertEqual(main.format_duration(3661), "01:01:01")
+
 
 if __name__ == "__main__":
     unittest.main()
+

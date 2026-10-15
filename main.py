@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import math
 from collections import Counter, defaultdict
 from datetime import datetime
@@ -17,7 +18,7 @@ import sys
 import time
 
 from dotenv import dotenv_values
-from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
+from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font
 from PIL import Image
@@ -83,10 +84,10 @@ def retry_delay(exc: Exception, attempt: int) -> float:
     return delay
 
 
-def wait_before_retry(delay: float) -> None:
+async def wait_before_retry(delay: float) -> None:
     while delay > 0:
         chunk = min(delay, 30.0)
-        time.sleep(chunk)
+        await asyncio.sleep(chunk)
         delay -= chunk
 
 
@@ -174,11 +175,15 @@ class ImageMatcher:
             if path.is_file() and path.suffix.lower() in cfg.IMAGE_EXTENSIONS:
                 self.by_name[path.name.casefold()].append(path)
 
-    def resolve(self, original: str) -> Path:
+    def resolve(self, original: str, annotation_dir: Path | None = None) -> Path:
         normalized = original.replace("\\", "/")
         path = Path(normalized)
         windows_path = PureWindowsPath(original)
         absolute = path.is_absolute() or windows_path.is_absolute()
+        if not absolute and annotation_dir is not None:
+            local = annotation_dir / path
+            if local.is_file():
+                return local
         candidate = path if absolute else self.root / path
         if candidate.is_file():
             return candidate
@@ -225,10 +230,12 @@ def validate_description(text: str) -> str:
     return " ".join(text.split())
 
 
-def generate_description(client: OpenAI, annotation: dict, image_url: str) -> str:
+async def generate_description(client: AsyncOpenAI, annotation: dict, image_url: str, check_api=None) -> str:
     for attempt in range(1, cfg.MAX_ATTEMPTS + 1):
         try:
-            response = client.responses.create(
+            if check_api is not None:
+                check_api()
+            response = await client.responses.create(
                 model=cfg.MODEL, instructions=SYSTEM_PROMPT, store=False,
                 max_output_tokens=cfg.MAX_OUTPUT_TOKENS,
                 input=[{"role": "user", "content": [
@@ -249,7 +256,7 @@ def generate_description(client: OpenAI, annotation: dict, image_url: str) -> st
             # Do not log API response bodies, headers or keys.
             code, error_type = api_error_details(exc) if isinstance(exc, APIStatusError) else ("n/a", "n/a")
             LOGGER.warning("Retry %d/%d in %.1fs (%s, code=%s, type=%s)", attempt, cfg.MAX_ATTEMPTS, delay, type(exc).__name__, code, error_type)
-            wait_before_retry(delay)
+            await wait_before_retry(delay)
     raise RuntimeError("Retry loop exhausted")
 
 
@@ -321,14 +328,38 @@ def save_excel(rows: list[tuple[str, str]]) -> bool:
         workbook.close()
 
 
-def run() -> int:
-    for directory in (cfg.IMAGE_DIR, cfg.JSON_DIR, cfg.OUTPUT_FILE.parent, cfg.CHECKPOINT_FILE.parent):
+def format_duration(seconds: float) -> str:
+    seconds = max(0, math.ceil(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def log_progress(processed: int, total: int, elapsed: float) -> None:
+    remaining = max(0, total - processed)
+    eta = format_duration(elapsed * remaining / processed) if processed else "계산 중"
+    LOGGER.info("처리 완료 %d/%d (%.1f%%) | 남은 %d건 | 경과 %s | 예상 남은 시간 %s",
+                processed, total, 100 * processed / total if total else 100.0,
+                remaining, format_duration(elapsed), eta)
+
+
+async def run_async() -> int:
+    for name, directory in (("IMAGE_DIR", cfg.IMAGE_DIR), ("JSON_DIR", cfg.JSON_DIR)):
+        if not directory.is_dir():
+            raise FileNotFoundError(f"{name} 입력 폴더가 없습니다: {directory}. SSD 연결과 config.py 경로를 확인하세요.")
+    for directory in (cfg.OUTPUT_FILE.parent, cfg.CHECKPOINT_FILE.parent):
         directory.mkdir(parents=True, exist_ok=True)
+    LOGGER.info("이미지 입력 폴더: %s", cfg.IMAGE_DIR)
+    LOGGER.info("JSON 입력 폴더: %s", cfg.JSON_DIR)
     if cfg.SAVE_EVERY < 1 or cfg.MAX_ATTEMPTS < 1 or cfg.SAVE_INTERVAL_SECONDS <= 0:
         raise ValueError("SAVE_EVERY/MAX_ATTEMPTS must be positive; SAVE_INTERVAL_SECONDS must be > 0")
-    files = sorted(p for p in cfg.JSON_DIR.rglob("*") if p.is_file() and p.suffix.lower() == ".json")
+    if not isinstance(cfg.MAX_CONCURRENT_REQUESTS, int) or isinstance(cfg.MAX_CONCURRENT_REQUESTS, bool) or not 1 <= cfg.MAX_CONCURRENT_REQUESTS <= 5:
+        raise ValueError("MAX_CONCURRENT_REQUESTS must be an integer between 1 and 5")
+    excluded_names = {name.casefold() for name in cfg.EXCLUDED_JSON_FILES}
+    files = sorted(p for p in cfg.JSON_DIR.rglob("*")
+                   if p.is_file() and p.suffix.lower() == ".json" and p.name.casefold() not in excluded_names)
     if not files:
-        LOGGER.info("No annotation JSON files. Put files in %s", cfg.JSON_DIR)
+        LOGGER.info("입력 폴더와 하위 폴더에 annotation JSON 파일이 없습니다: %s", cfg.JSON_DIR)
         return 0
     results = load_results()
     if not cfg.RESUME and cfg.CHECKPOINT_FILE.exists():
@@ -340,11 +371,20 @@ def run() -> int:
     success = failed = skipped = processed = 0
     client = None
     blocked_api_error = None
-    last_save = time.monotonic()
+    started_at = last_save = time.monotonic()
+    log_progress(0, len(files), 0.0)
     interrupted = False
-    try:
-        for index, json_path in enumerate(files, 1):
-            LOGGER.info("[%d/%d %.1f%%] %s", index, len(files), 100 * index / len(files), json_path.relative_to(cfg.JSON_DIR))
+    path_locks = defaultdict(asyncio.Lock)
+    pending_files = iter(enumerate(files, 1))
+
+    def check_api():
+        if blocked_api_error is not None:
+            raise blocked_api_error
+
+    async def worker():
+        nonlocal client, success, failed, skipped, processed, blocked_api_error, last_save
+        for index, json_path in pending_files:
+            LOGGER.info("작업 시작 [%d/%d]: %s", index, len(files), json_path.relative_to(cfg.JSON_DIR))
             row_index = None
             try:
                 image_path, annotation = parse_annotation(json_path)
@@ -357,21 +397,28 @@ def run() -> int:
                     skipped += 1
                     LOGGER.info("Resume: already generated %s", image_path)
                 else:
-                    matched = matcher.resolve(image_path)
-                    if blocked_api_error is not None:
-                        raise blocked_api_error
-                    if client is None:
-                        # Explicitly read this one .env value; do not fall back to process environment.
-                        key = dotenv_values(cfg.ENV_FILE, interpolate=False).get("OPENAI_API_KEY")
-                        if not key or key.strip() in {"your_api_key", "..."}:
-                            raise ValueError("Set OPENAI_API_KEY in the project .env file")
-                        client = OpenAI(api_key=key.strip(), max_retries=0, timeout=cfg.REQUEST_TIMEOUT)
-                    description = generate_description(client, annotation, image_data_url(matched))
-                    append_checkpoint(image_path, description)
-                    results[image_path] = description
-                    rows[row_index] = (image_path, description)
-                    success += 1
-                    LOGGER.info("API 호출 성공: %s — description 생성 및 체크포인트 저장 완료", image_path)
+                    # Duplicate imagePaths share one request when resuming.
+                    async with path_locks[image_path]:
+                        if cfg.RESUME and image_path in results:
+                            rows[row_index] = (image_path, results[image_path])
+                            skipped += 1
+                        else:
+                            matched = matcher.resolve(image_path, json_path.parent)
+                            check_api()
+                            if client is None:
+                                # Explicitly read this one .env value; do not fall back to process environment.
+                                key = dotenv_values(cfg.ENV_FILE, interpolate=False).get("OPENAI_API_KEY")
+                                if not key or key.strip() in {"your_api_key", "..."}:
+                                    raise ValueError("Set OPENAI_API_KEY in the project .env file")
+                                client = AsyncOpenAI(api_key=key.strip(), max_retries=0, timeout=cfg.REQUEST_TIMEOUT)
+                            image_url = await asyncio.to_thread(image_data_url, matched)
+                            description = await generate_description(client, annotation, image_url, check_api)
+                            # No await between checkpoint and shared state updates.
+                            append_checkpoint(image_path, description)
+                            results[image_path] = description
+                            rows[row_index] = (image_path, description)
+                            success += 1
+                            LOGGER.info("API 호출 성공: %s — description 생성 및 체크포인트 저장 완료", image_path)
             except Exception as exc:
                 failed += 1
                 if row_index is None:
@@ -390,24 +437,36 @@ def run() -> int:
                         blocked_api_error = exc
                 else:
                     LOGGER.error("Failed %s: %s: %s", json_path.name, type(exc).__name__, exc)
-            processed = index
+            processed += 1
             if processed % cfg.SAVE_EVERY == 0 or time.monotonic() - last_save >= cfg.SAVE_INTERVAL_SECONDS:
                 save_excel(rows)
                 last_save = time.monotonic()
-    except KeyboardInterrupt:
+            log_progress(processed, len(files), time.monotonic() - started_at)
+    tasks = [asyncio.create_task(worker()) for _ in range(cfg.MAX_CONCURRENT_REQUESTS)]
+    try:
+        await asyncio.gather(*tasks)
+    except (KeyboardInterrupt, asyncio.CancelledError):
         interrupted = True
         LOGGER.warning("Interrupted. Saving processed rows; rerun to resume.")
     finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         # Preserve recovered successes beyond the portion visited before interruption.
         if interrupted:
             existing_paths = {image_path for image_path, _ in rows}
             rows.extend((p, d) for p, d in results.items() if p not in existing_paths)
         saved = save_excel(rows)
         if client is not None:
-            client.close()
+            await client.close()
         LOGGER.info("Completed: success=%d, failed=%d, skipped=%d, processed=%d/%d", success, failed, skipped, processed, len(files))
+        LOGGER.info("총 경과 시간: %s", format_duration(time.monotonic() - started_at))
         LOGGER.info("Excel: %s", cfg.OUTPUT_FILE)
     return 130 if interrupted else (1 if failed or not saved else 0)
+
+
+def run() -> int:
+    return asyncio.run(run_async())
 
 
 def main() -> int:
