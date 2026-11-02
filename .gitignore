@@ -228,3 +228,10 @@ output/*
 !output/.gitkeep
 logs/*
 !logs/.gitkeep
+
+# ETL 분석 결과 엑셀 제외
+hanwha-etl/**/*.xlsx
+hanwha-etl/*.xlsx
+
+# Description Feedback 엑셀 제외
+desccription_feedback/*.xlsx
