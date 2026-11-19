@@ -235,3 +235,9 @@ hanwha-etl/*.xlsx
 
 # Description Feedback 엑셀 제외
 desccription_feedback/*.xlsx
+
+# Local reports and historical notes
+/복수 무기타입 검수 목록.xlsx
+/폴더별 객체 분포 집계.xlsx
+/OPTIMIZATION.md
+README.md

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from multi_weapon_review.main import (
+from data_preprocessing.multi_weapon_review import (
     HEADERS,
     WORKSHEET_NAME,
     review_paths,
