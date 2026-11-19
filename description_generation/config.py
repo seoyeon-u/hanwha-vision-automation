@@ -4,7 +4,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parents[1]
 # images와 labels_fixed를 포함한 데이터 루트만 지정하세요.
 # None이면 프로젝트의 data/images와 data/json 폴더를 사용합니다.
-INPUT_DIR = Path(r"D:\26pj227-a_한화에어로스페이스 원시데이터\261120_3차 납품\객체 없는 22건")
+INPUT_DIR = Path()
 # IMAGE_DIR = (
 #     INPUT_DIR / "images"
 #     if INPUT_DIR is not None
