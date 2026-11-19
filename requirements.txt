@@ -1,4 +1,4 @@
-openai>=1.68.0,<3
-python-dotenv>=1.0.1,<2
-openpyxl>=3.1.5,<4
-Pillow>=10.4.0,<13
+-r description_generation/requirements.txt
+-r description_merge/requirements.txt
+-r data_preprocessing/requirements.txt
+-r fp_labeling/requirements.txt

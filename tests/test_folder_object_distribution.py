@@ -5,7 +5,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from folder_object_distribution import (
+from data_preprocessing.folder_object_distribution import (
     HEADERS,
     WEAPON_BBOX_WORKSHEET_NAME,
     WORKSHEET_NAME,

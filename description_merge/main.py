@@ -57,7 +57,14 @@ def normalize_imagepath(value: Any) -> str | None:
     text = str(value).strip()
     if not text:
         return None
-    return posixpath.normpath(text.replace("\\", "/")).casefold()
+    # Windows 경로를 공통 형식으로 변환
+    text = text.replace("\\", "/")
+
+    # 폴더 경로를 제거하고 파일명만 추출
+    filename = posixpath.basename(posixpath.normpath(text))
+
+    # 대소문자 구분 없이 비교
+    return filename.casefold()
 
 
 def read_child_descriptions(child_path: Path) -> dict[str, Any]:
@@ -132,19 +139,15 @@ def ask_excel_path(prompt: str) -> Path:
         print("존재하는 .xlsx 파일 경로를 입력해 주세요.")
 
 
-def ask_parent_and_children() -> tuple[Path, Path, Path]:
+def ask_parent_and_child() -> tuple[Path, Path]:
     parent_path = ask_excel_path("부모 파일 경로 (수정 대상): ")
     child1_path = ask_excel_path("자식 파일 1 경로 (설명값): ")
-    child2_path = ask_excel_path("자식 파일 2 경로 (설명값): ")
-    return parent_path, child1_path, child2_path
+    return parent_path, child1_path
 
 
 def main() -> int:
-    print(
-        "부모 파일 1개와 자식 파일 2개의 경로를 차례로 입력하세요. "
-        "자식 파일 2개의 IMAGEPATH가 겹치면 두 번째 파일의 설명값을 사용합니다."
-    )
-    parent_path, child1_path, child2_path = ask_parent_and_children()
+    print("부모 파일과 설명값이 있는 자식 파일의 경로를 차례로 입력하세요.")
+    parent_path, child1_path = ask_parent_and_child()
 
     default_output = parent_path.with_name(f"{parent_path.stem}_updated.xlsx")
     output_input = input(
@@ -157,7 +160,6 @@ def main() -> int:
     input_paths = {
         parent_path.resolve(),
         child1_path.resolve(),
-        child2_path.resolve(),
     }
     if output_path.resolve() in input_paths:
         print("오류: 새 파일 경로는 부모/자식 입력 파일과 달라야 합니다.")
@@ -170,7 +172,6 @@ def main() -> int:
 
     try:
         descriptions = read_child_descriptions(child1_path)
-        descriptions.update(read_child_descriptions(child2_path))
         updated, matched_sheets = update_parent(
             parent_path, output_path, descriptions
         )

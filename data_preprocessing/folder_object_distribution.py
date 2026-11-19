@@ -17,6 +17,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+from .cli import confirm_overwrite, read_paths
+
 
 WORKSHEET_NAME = "폴더별 객체 분포 집계"
 WEAPON_BBOX_WORKSHEET_NAME = "독립 무기 BBox 상세"
@@ -661,28 +663,7 @@ def write_workbook(result: AnalysisResult, output_path: str | Path) -> Path:
 
 
 def read_input_paths() -> list[str]:
-    print("JSON 파일 또는 폴더 경로를 붙여넣으세요:")
-    print("(여러 경로는 줄마다 붙여넣고, 입력을 마치려면 빈 줄을 입력하세요.)")
-    paths: list[str] = []
-    while True:
-        try:
-            line = input()
-        except EOFError:
-            break
-        if not line.strip():
-            break
-        paths.append(line.strip().strip('"').strip("'"))
-    return paths
-
-
-def _confirm_overwrite(output_path: Path) -> bool:
-    while True:
-        answer = input(f"'{output_path.name}' 파일이 이미 있습니다. 덮어쓰시겠습니까? (y/n): ").strip().casefold()
-        if answer in {"y", "yes", "예"}:
-            return True
-        if answer in {"n", "no", "아니오"}:
-            return False
-        print("y 또는 n으로 입력해 주세요.")
+    return read_paths("(여러 경로는 줄마다 붙여넣고, 입력을 마치려면 빈 줄을 입력하세요.)")
 
 
 def main() -> int:
@@ -713,7 +694,7 @@ def main() -> int:
             print()
 
     output_path = Path.cwd() / OUTPUT_FILENAME
-    if output_path.exists() and not _confirm_overwrite(output_path):
+    if output_path.exists() and not confirm_overwrite(output_path):
         print("저장을 취소했습니다. 기존 파일은 변경되지 않았습니다.")
         return 1
     try:
