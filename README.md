@@ -222,19 +222,3 @@ hanwha-vision-automation/
 ├── requirements.txt          # Python 패키지 목록
 └── README.md
 ```
-
-<br>
-
-## 📚 프로젝트 특징
-
-- **데이터 전처리 자동화:** Labelme 기반 객체 분포 분석 및 검수 대상 추출
-- **AI 기반 데이터 설명 생성:** GPT-4.1을 활용한 이미지 설명 자동 생성
-- **반복 작업 최소화:** Excel 병합 및 파일 매칭·복사 작업 자동화
-- **대량 데이터 처리 지원:** 비동기 요청, API 요청량 제한 및 체크포인트 관리
-- **검수 편의성 향상:** GUI 기반 파일 선택 및 처리 내역 기록
-
-<br>
-
-## 🔗 GitHub Repository
-
-📎 [Hanwha Vision 데이터 처리 자동화 프로젝트](https://github.com/seoyeon-u/hanwha-vision-automation)
