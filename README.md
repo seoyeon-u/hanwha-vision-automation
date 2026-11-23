@@ -1,4 +1,4 @@
-# 🦅 Hanwha Vision 데이터 처리 자동화 도구
+# Hanwha Vision 데이터 처리 자동화 도구
 
 **Labelme 기반 이미지 데이터 전처리 및 검수 자동화 프로젝트**
 
@@ -10,7 +10,7 @@
 
 ## 📌 주요 기능
 
-### 📊 1. 데이터 전처리 및 객체 분포 분석
+### 1. 데이터 전처리 및 객체 분포 분석
 - Labelme JSON 어노테이션을 기반으로 **이미지 및 객체 분포 자동 집계**
 - 폴더별 이미지 수와 객체 수 분석
 - 여러 무기 유형이 함께 어노테이션된 **복수 무기타입 검수 대상 추출**
@@ -20,7 +20,7 @@
 - `폴더별 객체 분포 집계.xlsx`
 - `복수 무기타입 검수 목록.xlsx`
 
-### 🤖 2. OpenAI API 기반 이미지 설명 생성
+### 2. OpenAI API 기반 이미지 설명 생성
 - 이미지와 Labelme JSON 어노테이션을 활용한 **영어 이미지 설명 자동 생성**
 - JSON의 `imagePath`, `shapes` 정보를 기반으로 이미지 및 객체 정보 처리
 - **GPT-4.1 모델**을 활용한 이미지 설명 생성
@@ -33,14 +33,14 @@
 - `output/3nd_22_checkpoint.jsonl`
 - `logs/` 실행 로그
 
-### 📝 3. Excel 이미지 설명 병합
+### 3. Excel 이미지 설명 병합
 - 기존 Excel 데이터에 새로 생성한 **이미지 설명 자동 병합**
 - `imagePath`의 파일명을 기준으로 데이터 매칭
 - 대소문자 구분 없이 동일 이미지 검색
 - 기존 데이터 구조를 유지하면서 설명 정보 업데이트
 - 원본 파일을 보존하고 새로운 Excel 파일로 저장
 
-### 🔍 4. FP 검수 대상 자동 추출
+### 4. FP 검수 대상 자동 추출
 - 이미지 및 Labelme JSON 파일의 **자동 매칭**
 - 객체가 어노테이션된 이미지·JSON 쌍 추출
 - GUI 기반 입력 및 출력 경로 설정
@@ -68,14 +68,14 @@
 
 ## 🛠️ 실행 환경 및 초기 세팅
 
-### 💻 1. 프로젝트 클론
+### 1. 프로젝트 클론
 
 ```bash
 git clone https://github.com/seoyeon-u/hanwha-vision-automation.git
 cd hanwha-vision-automation
 ```
 
-### 🧪 2. 가상환경 생성 및 패키지 설치
+### 2. 가상환경 생성 및 패키지 설치
 
 Python 3.10 이상 환경에서 실행하며, Windows PowerShell을 기준으로 합니다.
 
@@ -84,7 +84,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-### ⚙️ 3. 환경변수 설정 (`.env`)
+### 3. 환경변수 설정 (`.env`)
 
 OpenAI API를 사용하는 이미지 설명 생성 기능을 실행하려면 환경변수 설정이 필요합니다.
 
@@ -95,7 +95,6 @@ Copy-Item .env.example .env
 `.env` 파일에 다음 항목을 설정합니다.
 
 ```env
-# 🔐 OpenAI API 인증
 OPENAI_API_KEY=your-openai-api-key
 ```
 
@@ -105,7 +104,7 @@ API 키는 이미지 설명 생성에 사용되며, `.env` 파일은 GitHub에 �
 
 ## 🚀 기능별 실행 방법
 
-### 📊 1. 데이터 전처리
+### 1. 데이터 전처리
 
 **폴더별 객체 분포 집계**
 
@@ -123,12 +122,11 @@ API 키는 이미지 설명 생성에 사용되며, `.env` 파일은 GitHub에 �
 
 입력을 마친 뒤 빈 줄을 입력하면 분석을 시작하며, 결과는 현재 작업 폴더에 Excel 파일로 저장됩니다.
 
-### 🤖 2. 이미지 설명 생성
+### 2. 이미지 설명 생성
 
 먼저 `description_generation/config.py`에서 데이터셋 경로를 설정합니다.
 
 ```python
-# 데이터셋 루트 경로
 INPUT_DIR = "your-dataset-path"
 ```
 
@@ -160,7 +158,7 @@ INPUT_DIR = "your-dataset-path"
 
 이미지 설명 생성 과정에서는 이미지 데이터가 OpenAI API로 전송되므로 데이터 보안 정책 및 API 사용 비용을 확인해야 합니다.
 
-### 📝 3. Excel 이미지 설명 병합
+### 3. Excel 이미지 설명 병합
 
 ```powershell
 .\.venv\Scripts\python.exe -m description_merge.main
@@ -176,7 +174,7 @@ INPUT_DIR = "your-dataset-path"
 
 저장 경로를 입력하지 않으면 기존 Excel 파일과 동일한 폴더에 `<부모 파일명>_updated.xlsx`가 생성됩니다.
 
-### 🔍 4. FP 검수 대상 추출
+### 4. FP 검수 대상 추출
 
 ```powershell
 .\.venv\Scripts\python.exe -m fp_labeling.main
@@ -190,6 +188,16 @@ GUI에서 입력 파일 또는 폴더와 결과 저장 폴더를 지정합니다
 - 파일 처리 결과와 예외 내역을 CSV로 저장
 
 GUI 실행을 위해서는 Tcl/Tk가 포함된 Python 환경이 필요합니다.
+
+**실행 화면**
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/b898a330-77c9-4178-84da-1d58dc80fd1a" width="650" alt="FP 검수 대상 추출 GUI">
+</p>
+
+<p align="center">
+  <sub>입력 경로 설정, 객체 검수 대상 추출 및 처리 결과 로그를 제공하는 GUI 화면</sub>
+</p>
 
 <br>
 
@@ -216,9 +224,14 @@ hanwha-vision-automation/
 ├── fp_labeling/              # GUI 기반 FP 검수 대상 추출
 │   └── main.py
 ├── tests/                    # 기능별 단위 테스트
+├── docs/
+│   └── images/
+│       └── fp_labeling_gui.png # FP 검수 GUI 실행 화면
 ├── output/                   # 이미지 설명 및 체크포인트 출력
 ├── logs/                     # 실행 로그
 ├── .env.example              # 환경변수 설정 예시
 ├── requirements.txt          # Python 패키지 목록
 └── README.md
 ```
+
+<br>
