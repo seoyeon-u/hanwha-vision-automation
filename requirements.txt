@@ -2,3 +2,6 @@
 -r description_merge/requirements.txt
 -r data_preprocessing/requirements.txt
 -r fp_labeling/requirements.txt
+streamlit>=1.65,<2
+plotly>=6,<7
+pandas>=2.2,<3

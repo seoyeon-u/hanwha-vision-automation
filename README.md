@@ -16,10 +16,6 @@
 - 여러 무기 유형이 함께 어노테이션된 **복수 무기타입 검수 대상 추출**
 - 분석 결과를 Excel 파일로 자동 저장
 
-**결과 파일**
-- `폴더별 객체 분포 집계.xlsx`
-- `복수 무기타입 검수 목록.xlsx`
-
 ### 2. OpenAI API 기반 이미지 설명 생성
 - 이미지와 Labelme JSON 어노테이션을 활용한 **영어 이미지 설명 자동 생성**
 - JSON의 `imagePath`, `shapes` 정보를 기반으로 이미지 및 객체 정보 처리
@@ -27,11 +23,6 @@
 - 비동기 API 요청을 통한 다중 이미지 처리
 - JSONL 체크포인트를 통한 처리 결과 기록 및 재실행 지원
 - 실행 로그 저장 및 API 요청 속도 제한 설정 지원
-
-**결과 파일**
-- `output/3nd_22_descriptions.xlsx`
-- `output/3nd_22_checkpoint.jsonl`
-- `logs/` 실행 로그
 
 ### 3. Excel 이미지 설명 병합
 - 기존 Excel 데이터에 새로 생성한 **이미지 설명 자동 병합**
@@ -156,7 +147,6 @@ INPUT_DIR = "your-dataset-path"
 
 `RESUME=True`로 설정하면 동일 작업에서 성공한 결과를 체크포인트에서 재사용할 수 있습니다.
 
-이미지 설명 생성 과정에서는 이미지 데이터가 OpenAI API로 전송되므로 데이터 보안 정책 및 API 사용 비용을 확인해야 합니다.
 
 ### 3. Excel 이미지 설명 병합
 
@@ -169,10 +159,6 @@ INPUT_DIR = "your-dataset-path"
 1. 설명을 병합할 기존 Excel 파일
 2. 새로 생성된 설명이 포함된 Excel 파일
 3. 병합 결과를 저장할 경로
-
-두 Excel 파일은 `imagePath`, `description` 헤더를 기준으로 처리하며, 기존 헤더인 `DESCRIPTNION`도 지원합니다.
-
-저장 경로를 입력하지 않으면 기존 Excel 파일과 동일한 폴더에 `<부모 파일명>_updated.xlsx`가 생성됩니다.
 
 ### 4. FP 검수 대상 추출
 
@@ -187,17 +173,51 @@ GUI에서 입력 파일 또는 폴더와 결과 저장 폴더를 지정합니다
 - 검수 대상 이미지 및 JSON 파일 복사
 - 파일 처리 결과와 예외 내역을 CSV로 저장
 
-GUI 실행을 위해서는 Tcl/Tk가 포함된 Python 환경이 필요합니다.
 
 **실행 화면**
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/b898a330-77c9-4178-84da-1d58dc80fd1a" width="650" alt="FP 검수 대상 추출 GUI">
+  <img src="https://github.com/user-attachments/assets/b898a330-77c9-4178-84da-1d58dc80fd1a" width="350" alt="FP 검수 대상 추출 GUI">
 </p>
 
 <p align="center">
   <sub>입력 경로 설정, 객체 검수 대상 추출 및 처리 결과 로그를 제공하는 GUI 화면</sub>
 </p>
+
+<br>
+
+## 📊 Streamlit 데이터 전처리 대시보드
+
+**Hanwha Vision Data Analysis**에서는 Labelme 데이터의 객체 분포와 복수 무기타입 검수 결과를 한 화면에서 확인할 수 있습니다.
+
+### 설치 및 실행
+
+저장소 루트에서 Python 3.10 이상을 사용해 실행합니다. 기존 가상환경이 있다면 패키지 설치부터 실행하면 됩니다.
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m streamlit run streamlit_app/app.py
+```
+
+### 사용 방법
+
+1. 사이드바에서 Labelme JSON을 하나 이상 선택하거나 JSON 및 이미지가 포함된 ZIP을 올립니다. ZIP 내부의 폴더 구조가 유지되며 업로드 현황에서 파일 수와 검증 결과를 확인할 수 있습니다.
+2. **전체 분석**, **객체 및 폴더별 분포 분석**, **복수 무기타입 검수** 중 하나를 선택합니다. **데이터 분석 실행**을 누르면 해당 분석이 시작됩니다.
+3. 객체 분포 막대·도넛 차트, 폴더별 통계·비교 차트, 이상 파일 목록을 확인합니다. 표에서 검수 유형, 폴더, 객체 클래스를 조합해 필터링하고 상세 보기에서 Labelme 도형과 객체 정보를 확인할 수 있습니다.
+4. **Excel 다운로드**에서 실행한 분석의 결과를 내려받습니다. 기존 CLI의 시트명과 열 구성을 유지합니다. 필터 변경과 다운로드 후에도 결과가 유지됩니다.
+
+이미지 파일이 없으면 요약의 이미지 수는 유효한 어노테이션 수로 표시합니다. 폴더별 이미지 수는 실제 파일 기준이며, JSON 누락과 실제 파일명 불일치는 **확인 불가**로 표시합니다. 파일 짝 검사는 ZIP 안에서 확인되는 `imagePath`의 상대 경로와 같은 폴더 또는 대응 이미지·어노테이션 폴더의 파일명을 사용합니다.
+
+한 세션에서 전체 업로드는 128 MiB, 압축을 푼 전체 데이터는 256 MiB, 개별 JSON·이미지는 32 MiB로 제한합니다. 분석에 필요한 임시 파일은 실행 후 정리됩니다. 결과와 다운로드는 현재 브라우저 세션에서 사용할 수 있으며, Excel에 기록된 서버의 임시 경로는 로컬 원본 파일을 가리키지 않습니다.
+
+기존 CLI 명령어는 위 **기능별 실행 방법**에 따라 실행할 수 있습니다. 대시보드 테스트만 확인하려면 저장소 루트에서 다음을 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_streamlit_dashboard.py" -v
+```
+
+대시보드와 신규 테스트는 Python 3.10에서 실행할 수 있습니다. 기존 Description 테스트를 포함한 전체 테스트에는 Python 3.11 이상이 필요합니다.
 
 <br>
 
@@ -223,6 +243,8 @@ hanwha-vision-automation/
 │   └── main.py
 ├── fp_labeling/              # GUI 기반 FP 검수 대상 추출
 │   └── main.py
+├── streamlit_app/            # Labelme 데이터 전처리 시각화 대시보드
+│   └── app.py                # Streamlit 실행 진입점
 ├── tests/                    # 기능별 단위 테스트
 ├── docs/
 │   └── images/
